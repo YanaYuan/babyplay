@@ -1,0 +1,571 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no">
+<title>宝宝的魔法键盘 ✨</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  html, body {
+    width: 100%; height: 100%;
+    overflow: hidden;
+    touch-action: none;
+    -webkit-user-select: none;
+    user-select: none;
+    cursor: none;
+  }
+
+  body {
+    font-family: 'Segoe UI', 'PingFang SC', 'Microsoft YaHei', sans-serif;
+    background: #1a0a2e;
+  }
+
+  canvas#bg { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 0; }
+  canvas#fx { position: fixed; top: 0; left: 0; width: 100%; height: 100%; z-index: 1; }
+
+  .letter-popup {
+    position: fixed; z-index: 10;
+    font-weight: 900; pointer-events: none;
+    text-shadow: 0 4px 20px rgba(0,0,0,0.3);
+    animation: letterPop 1.8s ease-out forwards;
+    will-change: transform, opacity;
+  }
+
+  @keyframes letterPop {
+    0%   { transform: scale(0) rotate(-15deg); opacity: 0; }
+    15%  { transform: scale(1.3) rotate(5deg); opacity: 1; }
+    30%  { transform: scale(1) rotate(0deg); opacity: 1; }
+    100% { transform: scale(1.2) translateY(-80px); opacity: 0; }
+  }
+
+  .animal-popup {
+    position: fixed; z-index: 9;
+    font-size: min(30vw, 200px);
+    pointer-events: none;
+    animation: animalBounce 2.5s ease-out forwards;
+    will-change: transform, opacity;
+    filter: drop-shadow(0 8px 30px rgba(0,0,0,0.3));
+  }
+
+  @keyframes animalBounce {
+    0%   { transform: scale(0) rotate(-20deg); opacity: 0; }
+    20%  { transform: scale(1.2) rotate(10deg); opacity: 1; }
+    35%  { transform: scale(0.9) rotate(-5deg); opacity: 1; }
+    50%  { transform: scale(1.05) rotate(2deg); opacity: 1; }
+    65%  { transform: scale(1) rotate(0); opacity: 1; }
+    100% { transform: scale(0.8) translateY(-40px); opacity: 0; }
+  }
+
+  .burst {
+    position: fixed; z-index: 8;
+    pointer-events: none;
+    border-radius: 50%;
+    animation: burstAnim 0.8s ease-out forwards;
+  }
+
+  @keyframes burstAnim {
+    0%   { transform: scale(0); opacity: 0.7; }
+    100% { transform: scale(4); opacity: 0; }
+  }
+
+  .touch-ripple {
+    position: fixed; z-index: 7;
+    pointer-events: none;
+    border-radius: 50%;
+    border: 4px solid white;
+    animation: rippleAnim 1s ease-out forwards;
+  }
+
+  @keyframes rippleAnim {
+    0%   { transform: scale(0); opacity: 0.8; }
+    100% { transform: scale(3); opacity: 0; }
+  }
+
+  .star {
+    position: fixed; z-index: 11;
+    pointer-events: none;
+    animation: starFloat 2s ease-out forwards;
+  }
+
+  @keyframes starFloat {
+    0%   { transform: scale(0) rotate(0deg); opacity: 1; }
+    30%  { transform: scale(1.2) rotate(180deg); opacity: 1; }
+    100% { transform: scale(0.5) rotate(360deg) translateY(-120px); opacity: 0; }
+  }
+
+  /* Fullscreen button - only visible UI element */
+  #fs-btn {
+    position: fixed; top: 10px; right: 10px; z-index: 100;
+    background: rgba(255,255,255,0.15); border: none; color: white;
+    font-size: 20px; padding: 8px 12px; border-radius: 12px;
+    cursor: pointer; opacity: 0.4; transition: opacity 0.3s;
+  }
+  #fs-btn:hover { opacity: 0.9; }
+</style>
+</head>
+<body>
+<canvas id="bg"></canvas>
+<canvas id="fx"></canvas>
+<button id="fs-btn" title="全屏">⛶</button>
+
+<script>
+// ============================================================
+//  Baby's Magic Keyboard — built with love 💛
+// ============================================================
+
+// --- Audio Engine (Web Audio API, no external files) ---
+const AudioCtx = window.AudioContext || window.webkitAudioContext;
+let audioCtx;
+
+function ensureAudio() {
+  if (!audioCtx) audioCtx = new AudioCtx();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+}
+
+// Pentatonic scale notes — always sounds pleasant & harmonious
+const PENTA_FREQS = [
+  262, 294, 330, 392, 440,   // C4 D4 E4 G4 A4
+  523, 587, 659, 784, 880,   // C5 D5 E5 G5 A5
+  1047, 1175, 1319            // C6 D6 E6
+];
+
+function playNote(freqIndex, duration = 0.4, type = 'triangle') {
+  ensureAudio();
+  const freq = PENTA_FREQS[freqIndex % PENTA_FREQS.length];
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = type;
+  osc.frequency.setValueAtTime(freq, audioCtx.currentTime);
+  gain.gain.setValueAtTime(0.25, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + duration);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + duration);
+}
+
+function playChime() {
+  ensureAudio();
+  const base = PENTA_FREQS[Math.floor(Math.random() * 8)];
+  [1, 1.5, 2].forEach((mult, i) => {
+    const osc = audioCtx.createOscillator();
+    const gain = audioCtx.createGain();
+    osc.type = 'sine';
+    osc.frequency.setValueAtTime(base * mult, audioCtx.currentTime);
+    gain.gain.setValueAtTime(0.15 / (i + 1), audioCtx.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.6);
+    osc.connect(gain);
+    gain.connect(audioCtx.destination);
+    osc.start(audioCtx.currentTime + i * 0.08);
+    osc.stop(audioCtx.currentTime + 0.7);
+  });
+}
+
+function playBubble() {
+  ensureAudio();
+  const osc = audioCtx.createOscillator();
+  const gain = audioCtx.createGain();
+  osc.type = 'sine';
+  const startFreq = 300 + Math.random() * 400;
+  osc.frequency.setValueAtTime(startFreq, audioCtx.currentTime);
+  osc.frequency.exponentialRampToValueAtTime(startFreq * 2, audioCtx.currentTime + 0.15);
+  gain.gain.setValueAtTime(0.2, audioCtx.currentTime);
+  gain.gain.exponentialRampToValueAtTime(0.001, audioCtx.currentTime + 0.3);
+  osc.connect(gain);
+  gain.connect(audioCtx.destination);
+  osc.start();
+  osc.stop(audioCtx.currentTime + 0.35);
+}
+
+// --- Color Palettes (baby-friendly, warm, high contrast) ---
+const PALETTES = [
+  ['#FF6B9D', '#FFB347', '#87CEEB', '#98D8C8', '#F7DC6F', '#C39BD3'], // Candy
+  ['#FF9A9E', '#FECFEF', '#A1C4FD', '#C2E9FB', '#FFF1C1', '#F5B7B1'], // Pastel
+  ['#FF6F61', '#6B5B95', '#88B04B', '#F7CAC9', '#92A8D1', '#FCCE7B'], // Playful
+  ['#00D2FF', '#A6FFCB', '#F9D423', '#FF4E50', '#FC913A', '#B9E8A0'], // Vivid
+];
+
+let currentPalette = 0;
+function nextColor() {
+  const p = PALETTES[currentPalette];
+  return p[Math.floor(Math.random() * p.length)];
+}
+
+// --- Animals & Emojis ---
+const ANIMALS = ['🐶','🐱','🐰','🐻','🦊','🐼','🐸','🦁','🐯','🐮',
+                 '🐷','🐵','🦄','🐳','🐙','🦋','🐞','🐢','🐠','🦀',
+                 '🐘','🦒','🐝','🦜','🐿️','🦭','🐧','🦩','🦔','🐲'];
+
+const NATURE = ['🌸','🌺','🌻','🌈','⭐','🌙','☀️','🍎','🍊','🍓',
+                '🍉','🍇','🌴','🍄','🎈','🎀','💖','✨','🫧','🪻'];
+
+const ALL_EMOJIS = [...ANIMALS, ...NATURE];
+
+// --- Background Canvas (soft animated gradient) ---
+const bgCanvas = document.getElementById('bg');
+const bgCtx = bgCanvas.getContext('2d');
+
+function resizeBg() {
+  bgCanvas.width = window.innerWidth * devicePixelRatio;
+  bgCanvas.height = window.innerHeight * devicePixelRatio;
+  bgCtx.scale(devicePixelRatio, devicePixelRatio);
+}
+resizeBg();
+
+let bgHue = 250;
+function drawBackground(t) {
+  bgHue = (bgHue + 0.02) % 360;
+  const w = window.innerWidth, h = window.innerHeight;
+  const grad = bgCtx.createRadialGradient(w/2, h/2, 0, w/2, h/2, Math.max(w, h) * 0.7);
+  const h1 = bgHue, h2 = (bgHue + 40) % 360, h3 = (bgHue + 80) % 360;
+  grad.addColorStop(0, `hsl(${h1}, 30%, 18%)`);
+  grad.addColorStop(0.5, `hsl(${h2}, 25%, 12%)`);
+  grad.addColorStop(1, `hsl(${h3}, 20%, 8%)`);
+  bgCtx.fillStyle = grad;
+  bgCtx.fillRect(0, 0, w, h);
+
+  // Floating soft circles in background
+  for (let i = 0; i < 6; i++) {
+    const x = w/2 + Math.sin(t/3000 + i * 1.2) * w * 0.3;
+    const y = h/2 + Math.cos(t/4000 + i * 0.9) * h * 0.3;
+    const r = Math.min(w, h) * (0.1 + 0.05 * Math.sin(t/2000 + i));
+    const cg = bgCtx.createRadialGradient(x, y, 0, x, y, r);
+    cg.addColorStop(0, `hsla(${(bgHue + i * 60) % 360}, 50%, 40%, 0.08)`);
+    cg.addColorStop(1, `hsla(${(bgHue + i * 60) % 360}, 50%, 40%, 0)`);
+    bgCtx.fillStyle = cg;
+    bgCtx.beginPath();
+    bgCtx.arc(x, y, r, 0, Math.PI * 2);
+    bgCtx.fill();
+  }
+}
+
+// --- Particle System (FX Canvas) ---
+const fxCanvas = document.getElementById('fx');
+const fxCtx = fxCanvas.getContext('2d');
+
+function resizeFx() {
+  fxCanvas.width = window.innerWidth * devicePixelRatio;
+  fxCanvas.height = window.innerHeight * devicePixelRatio;
+  fxCtx.scale(devicePixelRatio, devicePixelRatio);
+}
+resizeFx();
+
+window.addEventListener('resize', () => { resizeBg(); resizeFx(); });
+
+const particles = [];
+const MAX_PARTICLES = 500;
+
+class Particle {
+  constructor(x, y, color, size, vx, vy, life, shape) {
+    this.x = x; this.y = y;
+    this.color = color;
+    this.size = size;
+    this.vx = vx; this.vy = vy;
+    this.life = life; this.maxLife = life;
+    this.shape = shape || 'circle'; // circle, star, heart
+    this.rotation = Math.random() * Math.PI * 2;
+    this.rotSpeed = (Math.random() - 0.5) * 0.1;
+  }
+
+  update() {
+    this.x += this.vx;
+    this.y += this.vy;
+    this.vy += 0.02; // gentle gravity
+    this.vx *= 0.99;
+    this.life--;
+    this.rotation += this.rotSpeed;
+  }
+
+  draw(ctx) {
+    const alpha = Math.max(0, this.life / this.maxLife);
+    const s = this.size * (0.5 + 0.5 * alpha);
+    ctx.save();
+    ctx.translate(this.x, this.y);
+    ctx.rotate(this.rotation);
+    ctx.globalAlpha = alpha;
+
+    if (this.shape === 'star') {
+      drawStar(ctx, 0, 0, 5, s, s/2, this.color);
+    } else if (this.shape === 'heart') {
+      drawHeart(ctx, 0, 0, s, this.color);
+    } else {
+      ctx.beginPath();
+      ctx.arc(0, 0, s, 0, Math.PI * 2);
+      ctx.fillStyle = this.color;
+      ctx.fill();
+    }
+    ctx.restore();
+  }
+}
+
+function drawStar(ctx, cx, cy, spikes, outerR, innerR, color) {
+  ctx.beginPath();
+  for (let i = 0; i < spikes * 2; i++) {
+    const r = i % 2 === 0 ? outerR : innerR;
+    const angle = (i * Math.PI) / spikes - Math.PI / 2;
+    const x = cx + Math.cos(angle) * r;
+    const y = cy + Math.sin(angle) * r;
+    i === 0 ? ctx.moveTo(x, y) : ctx.lineTo(x, y);
+  }
+  ctx.closePath();
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function drawHeart(ctx, cx, cy, size, color) {
+  ctx.beginPath();
+  const s = size * 0.6;
+  ctx.moveTo(cx, cy + s * 0.3);
+  ctx.bezierCurveTo(cx, cy - s * 0.3, cx - s, cy - s * 0.3, cx - s, cy + s * 0.1);
+  ctx.bezierCurveTo(cx - s, cy + s * 0.6, cx, cy + s, cx, cy + s);
+  ctx.bezierCurveTo(cx, cy + s, cx + s, cy + s * 0.6, cx + s, cy + s * 0.1);
+  ctx.bezierCurveTo(cx + s, cy - s * 0.3, cx, cy - s * 0.3, cx, cy + s * 0.3);
+  ctx.fillStyle = color;
+  ctx.fill();
+}
+
+function spawnBurst(x, y, count, color) {
+  const shapes = ['circle', 'star', 'heart'];
+  for (let i = 0; i < count; i++) {
+    const angle = (Math.PI * 2 * i) / count + Math.random() * 0.3;
+    const speed = 2 + Math.random() * 4;
+    const shape = shapes[Math.floor(Math.random() * shapes.length)];
+    if (particles.length < MAX_PARTICLES) {
+      particles.push(new Particle(
+        x, y,
+        color || nextColor(),
+        4 + Math.random() * 10,
+        Math.cos(angle) * speed,
+        Math.sin(angle) * speed - 1,
+        60 + Math.random() * 40,
+        shape
+      ));
+    }
+  }
+}
+
+function spawnTrail(x, y) {
+  if (particles.length < MAX_PARTICLES) {
+    particles.push(new Particle(
+      x + (Math.random() - 0.5) * 10,
+      y + (Math.random() - 0.5) * 10,
+      nextColor(),
+      5 + Math.random() * 8,
+      (Math.random() - 0.5) * 2,
+      -Math.random() * 2,
+      30 + Math.random() * 20,
+      Math.random() > 0.5 ? 'circle' : 'star'
+    ));
+  }
+}
+
+// --- DOM Effects ---
+function showLetter(key, x, y) {
+  const el = document.createElement('div');
+  el.className = 'letter-popup';
+  el.textContent = key.toUpperCase();
+  const color = nextColor();
+  const size = Math.min(window.innerWidth, window.innerHeight) * 0.25;
+  el.style.cssText = `
+    left: ${x - size/2}px; top: ${y - size/2}px;
+    font-size: ${size}px; color: ${color};
+    width: ${size * 1.2}px; text-align: center;
+  `;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2000);
+}
+
+function showAnimal(x, y) {
+  const el = document.createElement('div');
+  el.className = 'animal-popup';
+  el.textContent = ALL_EMOJIS[Math.floor(Math.random() * ALL_EMOJIS.length)];
+  el.style.cssText = `left: ${x - 100}px; top: ${y - 100}px;`;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 2800);
+}
+
+function showBurst(x, y, color) {
+  const el = document.createElement('div');
+  el.className = 'burst';
+  const size = 40 + Math.random() * 30;
+  el.style.cssText = `
+    left: ${x - size/2}px; top: ${y - size/2}px;
+    width: ${size}px; height: ${size}px;
+    background: radial-gradient(circle, ${color}, transparent);
+  `;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 900);
+}
+
+function showTouchRipple(x, y) {
+  const el = document.createElement('div');
+  el.className = 'touch-ripple';
+  const size = 30;
+  const color = nextColor();
+  el.style.cssText = `
+    left: ${x - size/2}px; top: ${y - size/2}px;
+    width: ${size}px; height: ${size}px;
+    border-color: ${color};
+  `;
+  document.body.appendChild(el);
+  setTimeout(() => el.remove(), 1100);
+}
+
+// --- Keyboard Handling ---
+let noteIndex = 0;
+
+// Prevent all default keyboard behavior
+window.addEventListener('keydown', (e) => {
+  e.preventDefault();
+  e.stopPropagation();
+
+  ensureAudio();
+
+  const key = e.key;
+  const w = window.innerWidth, h = window.innerHeight;
+
+  // Random position biased toward center
+  const x = w * 0.2 + Math.random() * w * 0.6;
+  const y = h * 0.2 + Math.random() * h * 0.6;
+
+  // Play a note from pentatonic scale
+  playNote(noteIndex, 0.5, Math.random() > 0.5 ? 'triangle' : 'sine');
+  noteIndex = (noteIndex + 1) % PENTA_FREQS.length;
+
+  // Show the letter/number if printable
+  if (key.length === 1) {
+    showLetter(key, x, y);
+  }
+
+  // Always show an animal/emoji
+  const ax = w * 0.15 + Math.random() * w * 0.7;
+  const ay = h * 0.15 + Math.random() * h * 0.7;
+  showAnimal(ax, ay);
+
+  // Particle burst
+  const color = nextColor();
+  spawnBurst(x, y, 15 + Math.floor(Math.random() * 10), color);
+  showBurst(x, y, color);
+
+  // Occasionally switch palette
+  if (Math.random() < 0.1) {
+    currentPalette = (currentPalette + 1) % PALETTES.length;
+  }
+}, true);
+
+// Block all other key events
+window.addEventListener('keyup', (e) => { e.preventDefault(); }, true);
+window.addEventListener('keypress', (e) => { e.preventDefault(); }, true);
+
+// --- Touch / Mouse Handling ---
+let lastTouchTime = 0;
+const TOUCH_SOUND_THROTTLE = 80; // ms between sounds for touch drag
+
+function handleMove(x, y) {
+  spawnTrail(x, y);
+
+  const now = Date.now();
+  if (now - lastTouchTime > TOUCH_SOUND_THROTTLE) {
+    playBubble();
+    lastTouchTime = now;
+  }
+}
+
+function handleTap(x, y) {
+  ensureAudio();
+  playChime();
+  showAnimal(x, y);
+  spawnBurst(x, y, 20);
+  showTouchRipple(x, y);
+
+  // Spawn a few extra ripples
+  for (let i = 0; i < 3; i++) {
+    setTimeout(() => {
+      showTouchRipple(
+        x + (Math.random() - 0.5) * 80,
+        y + (Math.random() - 0.5) * 80
+      );
+    }, i * 150);
+  }
+}
+
+// Touch events
+fxCanvas.addEventListener('touchstart', (e) => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    handleTap(t.clientX, t.clientY);
+  }
+}, { passive: false });
+
+fxCanvas.addEventListener('touchmove', (e) => {
+  e.preventDefault();
+  for (const t of e.changedTouches) {
+    handleMove(t.clientX, t.clientY);
+  }
+}, { passive: false });
+
+// Mouse events (for desktop testing)
+let mouseDown = false;
+fxCanvas.addEventListener('mousedown', (e) => {
+  mouseDown = true;
+  handleTap(e.clientX, e.clientY);
+});
+fxCanvas.addEventListener('mousemove', (e) => {
+  if (mouseDown) handleMove(e.clientX, e.clientY);
+});
+fxCanvas.addEventListener('mouseup', () => { mouseDown = false; });
+
+// --- Animation Loop ---
+function animate(t) {
+  // Background
+  bgCtx.setTransform(1, 0, 0, 1, 0, 0);
+  bgCtx.scale(devicePixelRatio, devicePixelRatio);
+  drawBackground(t);
+
+  // Particles
+  fxCtx.setTransform(1, 0, 0, 1, 0, 0);
+  fxCtx.scale(devicePixelRatio, devicePixelRatio);
+  fxCtx.clearRect(0, 0, window.innerWidth, window.innerHeight);
+
+  for (let i = particles.length - 1; i >= 0; i--) {
+    particles[i].update();
+    particles[i].draw(fxCtx);
+    if (particles[i].life <= 0) particles.splice(i, 1);
+  }
+
+  requestAnimationFrame(animate);
+}
+requestAnimationFrame(animate);
+
+// --- Fullscreen toggle ---
+document.getElementById('fs-btn').addEventListener('click', () => {
+  if (!document.fullscreenElement) {
+    document.documentElement.requestFullscreen().catch(() => {});
+  } else {
+    document.exitFullscreen();
+  }
+});
+
+// --- Prevent context menu & other unwanted behaviors ---
+window.addEventListener('contextmenu', e => e.preventDefault());
+window.addEventListener('selectstart', e => e.preventDefault());
+window.addEventListener('dragstart', e => e.preventDefault());
+
+// --- Welcome animation on load ---
+window.addEventListener('load', () => {
+  const w = window.innerWidth, h = window.innerHeight;
+  // Spawn a welcoming burst of particles in the center
+  setTimeout(() => {
+    for (let i = 0; i < 5; i++) {
+      setTimeout(() => {
+        const x = w * 0.3 + Math.random() * w * 0.4;
+        const y = h * 0.3 + Math.random() * h * 0.4;
+        spawnBurst(x, y, 12);
+      }, i * 200);
+    }
+  }, 300);
+});
+</script>
+</body>
+</html>
